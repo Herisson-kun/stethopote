@@ -1,7 +1,9 @@
-.venv
+# Ne SURTOUT PAS envoyer les clés API
 .env
+
+# Dossiers inutiles pour le cloud
+.venv/
 __pycache__/
-chroma_db/
-data
-data_processed
-store
+data/
+data_processed/
+processed_files.txt
