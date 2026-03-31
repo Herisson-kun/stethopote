@@ -11,7 +11,6 @@ from langchain_classic.storage.encoder_backed import EncoderBackedStore
 import pickle
 from langchain_classic.retrievers.parent_document_retriever import ParentDocumentRetriever
 from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
-from langchain_cohere import CohereRerank
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
