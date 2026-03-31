@@ -5,3 +5,4 @@ langchain-chroma
 langchain-core
 langchain-text-splitters
 python-dotenv
+langchain-classic
