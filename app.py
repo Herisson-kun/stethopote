@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from langchain_core.stores import InMemoryStore
 from langchain_core.documents import Document
 import json
-
+from langchain_pinecone import PineconeVectorStore
 # LangChain Imports
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -83,28 +83,24 @@ QUESTIONS_EXEMPLES = [
 # 2. INITIALISATION DU CERVEAU 
 # ==========================================
 @st.cache_resource
+@st.cache_resource
 def init_stethopote():
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    
-    # Les nouveaux chemins !
-    chroma_dir = "store_with_page/chroma_db"
     docstore_path = "store_with_page/docstore.jsonl"
     
-    # 1. Chargement de la base vectorielle ChromaDB
-    vectorstore = Chroma(
-        collection_name="stethopote_children",
-        persist_directory=chroma_dir,
-        embedding_function=embeddings
+    # 1. Connexion au Cloud Pinecone ! (La clé API est lue automatiquement)
+    vectorstore = PineconeVectorStore(
+        index_name="stethopote",
+        embedding=embeddings
     )
     
-    # 2. Chargement du DocStore depuis le fichier JSONL
+    # 2. Chargement du DocStore local (Tes parents légers)
     store = InMemoryStore()
     try:
         with open(docstore_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     data = json.loads(line)
-                    # On recrée l'objet Document que LangChain attend
                     doc = Document(
                         page_content=data["content"],
                         metadata={
@@ -115,9 +111,9 @@ def init_stethopote():
                     )
                     store.mset([(data["id"], doc)])
     except FileNotFoundError:
-        st.error(f"Fichier introuvable : {docstore_path}. As-tu bien lancé l'ingestion ?")
+        st.error("Docstore introuvable.")
     
-    # 3. Les splitters "décoratifs" pour la validation LangChain
+    # 3. Les splitters LangChain
     parent_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
         model_name="gpt-4o", chunk_size=1000, chunk_overlap=100
     )
@@ -125,7 +121,7 @@ def init_stethopote():
         model_name="gpt-4o", chunk_size=200, chunk_overlap=20
     )
     
-    # 4. Le Retriever final
+    # 4. Le Retriever
     base_retriever = ParentDocumentRetriever(
         vectorstore=vectorstore,
         docstore=store,

@@ -7,3 +7,5 @@ langchain-text-splitters
 python-dotenv
 langchain-classic
 protobuf==3.20.3
+pinecone-client
+langchain-pinecone
