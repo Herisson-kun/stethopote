@@ -5,12 +5,12 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 
-# --- Imports LangChain Modernes ---
+# --- Imports LangChain Officiels & Robustes ---
 from langchain_core.stores import InMemoryStore
 from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_classic.retrievers.parent_document_retriever import ParentDocumentRetriever
+from langchain.retrievers import ParentDocumentRetriever # Import standard
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -35,7 +35,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Tes 30 questions courtes (Parfait pour éviter le scroll !)
 QUESTIONS_EXEMPLES = [
     "Signes de la pneumonie lobaire aiguë ?", "Prise en charge de l'infarctus (SCA ST+) ?",
     "Étiologies d'une hypercalcémie ?", "Critères de Duke (endocardite) ?",
@@ -61,56 +60,56 @@ QUESTIONS_EXEMPLES = [
 def init_stethopote():
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     
-    # Chemin absolu blindé pour Streamlit
     current_dir = os.path.dirname(os.path.abspath(__file__))
     docstore_path = os.path.join(current_dir, "store_with_page", "docstore.jsonl")
     
-    # 1. Le Cloud : Pinecone
+    # 1. Pinecone
     vectorstore = PineconeVectorStore(
         index_name="stethopote",
         embedding=embeddings
     )
     
-    # 2. Le Local : Docstore en JSONL
+    # 2. Docstore
     store = InMemoryStore()
     try:
-        with open(docstore_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    data = json.loads(line)
-                    doc = Document(
-                        page_content=data["content"],
-                        metadata={
-                            "document_name": data["document_name"],
-                            "page_start": data["page_start"],
-                            "page_end": data["page_end"]
-                        }
-                    )
-                    store.mset([(data["id"], doc)])
-    except FileNotFoundError:
-        st.error(f"⚠️ Docstore introuvable. Assure-toi que le fichier existe ici : {docstore_path}")
+        if os.path.exists(docstore_path):
+            with open(docstore_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        data = json.loads(line)
+                        doc = Document(
+                            page_content=data["content"],
+                            metadata={
+                                "document_name": data["document_name"],
+                                "page_start": data["page_start"],
+                                "page_end": data["page_end"]
+                            }
+                        )
+                        store.mset([(data["id"], doc)])
+        else:
+            st.error(f"Fichier docstore.jsonl introuvable à : {docstore_path}")
+    except Exception as e:
+        st.error(f"Erreur lors de la lecture du docstore : {e}")
     
-    # 3. Les splitters (Placeholders obligatoires)
-    parent_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=1000, chunk_overlap=100)
-    child_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(chunk_size=200, chunk_overlap=20)
+    # 3. Splitters (Requis par le Retriever)
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
     
-    # 4. Le Retriever unifié
-    base_retriever = ParentDocumentRetriever(
+    # 4. Retriever
+    return ParentDocumentRetriever(
         vectorstore=vectorstore,
         docstore=store,
         child_splitter=child_splitter,
         parent_splitter=parent_splitter
     )
-    
-    return base_retriever
 
 # ==========================================
-# 3. INTERFACE UTILISATEUR & LOGIQUE DE CHAT
+# 3. INTERFACE & LOGIQUE
 # ==========================================
 
 with st.sidebar:
     st.title("⚙️ Paramètres")
-    st.info("Stéthopote est ton assistant de révision. Ses réponses sont générées strictement à partir de tes collèges de médecine sourcés.")
+    st.info("Assistant de révision basé strictement sur tes cours.")
     st.divider()
     if st.button("🗑️ Nouvelle conversation", use_container_width=True):
         st.session_state.messages = []
@@ -119,92 +118,77 @@ with st.sidebar:
 st.title("🩺 Stéthopote", anchor=False)
 st.caption("Ton binôme de révision médical")
 
-# Chargement de la base
 try:
     retriever = init_stethopote()
 except Exception as e:
-    st.error(f"Erreur fatale lors du chargement de la base : {e}")
+    st.error(f"Erreur de base : {e}")
     st.stop()
 
-# Initialisation de la mémoire
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Réaffichage de l'historique
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Affichage historique
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-question_aleatoire = random.choice(QUESTIONS_EXEMPLES)
+placeholder_q = random.choice(QUESTIONS_EXEMPLES)
 
-# Gestion de la nouvelle question
-if prompt := st.chat_input(f"Ex: {question_aleatoire}"):
+if prompt := st.chat_input(f"Ex: {placeholder_q}"):
     
-    # 1. Afficher et sauvegarder la question
+    # Affichage utilisateur
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 2. Préparer la réponse
+    # Réponse Assistant
     with st.chat_message("assistant"):
-        with st.spinner("Je fouille dans tes collèges de médecine... 📚"):
+        with st.spinner("Recherche dans les cours... 📚"):
             try:
-                # ÉTAPE A : Recherche dans Pinecone + Jsonl
+                # ÉTAPE A : Retrieval
                 relevant_docs = retriever.invoke(prompt)
                 
                 if not relevant_docs:
-                    st.warning("Je n'ai rien trouvé d'assez précis dans tes collèges pour cette question.")
+                    st.warning("Désolé, je ne trouve pas d'info à ce sujet dans tes collèges.")
                 else:
-                    # ÉTAPE B : Compilation du contexte
-                    context = "\n\n---\n\n".join([doc.page_content for doc in relevant_docs])
+                    context = "\n\n---\n\n".join([d.page_content for d in relevant_docs])
                     
-                    # ÉTAPE C : Préparation du LLM
-                    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-                    system_prompt = """Tu es Stéthopote, un assistant médical bienveillant conçu pour aider une étudiante en médecine.
-Pour répondre aux questions médicales, tu dois IMPÉRATIVEMENT utiliser le CONTEXTE fourni. Si l'information n'y est pas, dis-le.
-Structure ta réponse avec des listes à puces et du gras pour les mots-clés."""
-
-                    full_prompt = ChatPromptTemplate.from_messages([
-                        ("system", system_prompt),
+                    # ÉTAPE B : LLM & Prompt
+                    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, streaming=True)
+                    
+                    prompt_template = ChatPromptTemplate.from_messages([
+                        ("system", "Tu es Stéthopote, un assistant médical. Réponds UNIQUEMENT en utilisant le contexte fourni. Si l'info manque, dis-le. Structure avec des puces et du gras."),
                         MessagesPlaceholder(variable_name="chat_history"),
-                        ("human", "Contexte des cours :\n{context}\n\nQuestion de l'étudiante : {query}")
+                        ("human", "Contexte :\n{context}\n\nQuestion : {query}")
                     ])
                     
-                    chain = full_prompt | llm
+                    chain = prompt_template | llm
                     
-                    # ÉTAPE D : Traduction de l'historique pour LangChain (CORRECTION CRUCIALE ICI)
-                    historique_langchain = []
-                    # On ne prend PAS le dernier message (qui est la question actuelle) pour ne pas faire de doublon !
-                    for msg in st.session_state.messages[:-1]:
-                        role = "human" if msg["role"] == "user" else "ai"
-                        historique_langchain.append((role, msg["content"]))
+                    # ÉTAPE C : Historique formaté
+                    history = []
+                    for m in st.session_state.messages[:-1]:
+                        role = "human" if m["role"] == "user" else "ai"
+                        history.append((role, m["content"]))
                     
-                    # ÉTAPE E : Génération en streaming
-                    stream = chain.stream({
-                        "context": context, 
-                        "query": prompt,
-                        "chat_history": historique_langchain
-                    })
+                    # ÉTAPE D : Streaming
+                    full_response = st.write_stream(
+                        chunk.content for chunk in chain.stream({
+                            "context": context,
+                            "query": prompt,
+                            "chat_history": history
+                        })
+                    )
                     
-                    full_response = st.write_stream(chunk.content for chunk in stream)
-                    
-                    # Sauvegarde de la réponse dans la mémoire
                     st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-                    # ÉTAPE F : Affichage des sources
-                    with st.expander("📚 Voir les sources consultées"):
-                        for i, doc in enumerate(relevant_docs, 1):
-                            doc_name = doc.metadata.get('document_name', 'Collège inconnu')
-                            page_start = doc.metadata.get('page_start', '?')
-                            page_end = doc.metadata.get('page_end', '?')
-                            
-                            if page_start == page_end:
-                                pages_info = f"Page {page_start}"
-                            else:
-                                pages_info = f"Pages {page_start} à {page_end}"
-                                
-                            st.markdown(f"**{i}. {doc_name}** — *{pages_info}*")
+                    # ÉTAPE E : Sources
+                    with st.expander("📚 Sources consultées"):
+                        for i, d in enumerate(relevant_docs, 1):
+                            name = d.metadata.get('document_name', 'Inconnu')
+                            p_s = d.metadata.get('page_start', '?')
+                            p_e = d.metadata.get('page_end', '?')
+                            p_info = f"Page {p_s}" if p_s == p_e else f"Pages {p_s} à {p_e}"
+                            st.markdown(f"**{i}. {name}** — *{p_info}*")
                             
             except Exception as e:
-                # Si jamais ça plante, ça n'effacera plus l'écran, ça affichera l'erreur en rouge !
-                st.error(f"Une erreur est survenue pendant la réflexion de l'IA : {e}")
+                st.error(f"Erreur technique : {e}")
