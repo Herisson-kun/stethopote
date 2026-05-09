@@ -83,18 +83,21 @@ QUESTIONS_EXEMPLES = [
 # 2. INITIALISATION DU CERVEAU 
 # ==========================================
 @st.cache_resource
-@st.cache_resource
 def init_stethopote():
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    docstore_path = "store_with_page/docstore.jsonl"
     
-    # 1. Connexion au Cloud Pinecone ! (La clé API est lue automatiquement)
+    # --- LA CORRECTION EST ICI ---
+    # On calcule le chemin absolu de manière dynamique
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    docstore_path = os.path.join(current_dir, "store_with_page", "docstore.jsonl")
+    
+    # 1. Connexion au Cloud Pinecone
     vectorstore = PineconeVectorStore(
         index_name="stethopote",
         embedding=embeddings
     )
     
-    # 2. Chargement du DocStore local (Tes parents légers)
+    # 2. Chargement du DocStore avec le chemin sécurisé
     store = InMemoryStore()
     try:
         with open(docstore_path, "r", encoding="utf-8") as f:
@@ -111,7 +114,7 @@ def init_stethopote():
                     )
                     store.mset([(data["id"], doc)])
     except FileNotFoundError:
-        st.error("Docstore introuvable.")
+        st.error(f"Docstore introuvable. J'ai cherché ici : {docstore_path}") # J'ai amélioré l'erreur pour qu'elle te dise OÙ elle a cherché !
     
     # 3. Les splitters LangChain
     parent_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
