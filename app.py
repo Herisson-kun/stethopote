@@ -10,7 +10,7 @@ from langchain_core.stores import InMemoryStore
 from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain.retrievers import ParentDocumentRetriever
+from langchain_classic.retrievers.parent_document_retriever import ParentDocumentRetriever
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
