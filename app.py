@@ -306,9 +306,12 @@ with st.sidebar:
     st.caption("Ton binôme de révision médical.")
     if st.button("🔄 Effacer l'historique", type="primary", use_container_width=True):
         st.session_state.messages = [{"role": "assistant", "content": "Bonjour ! Pose-moi une question médicale."}]
-        # On supprime la question en mémoire pour forcer un nouveau tirage aléatoire
         if "placeholder_q" in st.session_state:
             del st.session_state["placeholder_q"]
+            
+        # 👈 NOUVEAU : On débloque la barre de force
+        st.session_state.input_disabled = False 
+        
         st.rerun()
 
     st.divider()
@@ -374,8 +377,15 @@ else:
     # La conversation a commencé : texte classique
     texte_barre = "Demander à Stéthopote..."
 
+# --- GESTION DU BLOCAGE DE LA BARRE (ANTI-SPAM) ---
+if "input_disabled" not in st.session_state:
+    st.session_state.input_disabled = False
+
+def lock_chat():
+    st.session_state.input_disabled = True
+
 # --- LA BARRE DE CHAT ---
-if prompt := st.chat_input(texte_barre):
+if prompt := st.chat_input(texte_barre, disabled=st.session_state.input_disabled, on_submit=lock_chat):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     with st.chat_message("user"):
@@ -465,5 +475,6 @@ if prompt := st.chat_input(texte_barre):
         except Exception as e:
             print(f"⚠️ Erreur lors de l'enregistrement du log Supabase : {e}")
 
+        st.session_state.input_disabled = False
         # LA MAGIE ANTI-GHOSTING : On force le rafraîchissement propre de l'UI
         st.rerun()
