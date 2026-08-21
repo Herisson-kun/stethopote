@@ -3,7 +3,6 @@ streamlit
 openai
 supabase
 pinecone
-pinecone-text
 cohere
 pydantic
 python-dotenv
