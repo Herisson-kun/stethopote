@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
 from pinecone import Pinecone
-from pinecone_text.sparse import SpladeEncoder
 from supabase import create_client, Client
 from openai import OpenAI
 import cohere
