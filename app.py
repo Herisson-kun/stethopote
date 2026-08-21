@@ -301,8 +301,10 @@ with st.sidebar:
     st.title("⚙️ Stéthopote")
     st.caption("Ton binôme de révision médical.")
     if st.button("🔄 Effacer l'historique", type="primary", use_container_width=True):
-        # Au lieu de mettre une liste vide [], on réinjecte le message de bienvenue !
         st.session_state.messages = [{"role": "assistant", "content": "Bonjour ! Pose-moi une question médicale."}]
+        # On supprime la question en mémoire pour forcer un nouveau tirage aléatoire
+        if "placeholder_q" in st.session_state:
+            del st.session_state["placeholder_q"]
         st.rerun()
 
     st.divider()
@@ -357,16 +359,19 @@ QUESTIONS_EXEMPLES = [
     "Règle ABCDE pour le dépistage clinique du mélanome ?",
     "Quels sont les signes de gravité d'une pneumonie aiguë communautaire (score CRB-65) ?"
 ]
-# 1. On stocke la question exemple dans la mémoire (si elle n'y est pas déjà)
-if "placeholder_q" not in st.session_state:
-    st.session_state.placeholder_q = random.choice(QUESTIONS_EXEMPLES)
 
-# 2. On utilise la question stockée en mémoire
-if prompt := st.chat_input(f"Ex: {st.session_state.placeholder_q}"):
-    
-    # 3. Dès que l'utilisateur a envoyé son message, on prépare une nouvelle question pour la PROCHAINE fois
-    st.session_state.placeholder_q = random.choice(QUESTIONS_EXEMPLES)
-    
+# --- GESTION DU TEXTE DE LA BARRE DE RECHERCHE ---
+if len(st.session_state.messages) <= 1:
+    # C'est le début de la conversation : on fige une question aléatoire
+    if "placeholder_q" not in st.session_state:
+        st.session_state.placeholder_q = random.choice(QUESTIONS_EXEMPLES)
+    texte_barre = f"Ex: {st.session_state.placeholder_q}"
+else:
+    # La conversation a commencé : texte classique
+    texte_barre = "Demander à Stéthopote..."
+
+# --- LA BARRE DE CHAT ---
+if prompt := st.chat_input(texte_barre):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     with st.chat_message("user"):
