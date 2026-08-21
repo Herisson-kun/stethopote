@@ -100,7 +100,7 @@ class QueryAnalysis(BaseModel):
     optimized_query: str = Field(
         description="Réécris la requête en une question clinique claire pour un moteur de recherche. RÈGLES ABSOLUES : 1. Retire les formules de politesse. 2. N'invente AUCUN diagnostic. 3. NE MENTIONNE JAMAIS LE NUMÉRO DE L'ITEM."
     )   
-    category: str = Field(description="Catégorie de la question : 'specific_question', 'full_item_review', 'full_disease_review', ou 'non_medical_or_smalltalk' (pour les salutations, remerciements ou questions hors sujet médical).")
+    category: str = Field(description="Catégorie : 'specific_question', 'full_item_review', 'full_disease_review', ou 'non_medical_or_smalltalk' (salutations, remerciements, lettres aléatoires, requêtes vides ou hors sujet).")
     item_filter: Optional[str] = Field(description="Si l'étudiant mentionne un numéro d'item, extraire la valeur exacte format 'Item XXX'. Sinon, null.")
     hypothetical_answer: str = Field(description="Rédige une réponse hypothétique TRÈS COURTE (2-3 phrases) à la question.")
 
@@ -119,7 +119,11 @@ def rag_pipeline(user_query, status_container):
     t0 = time.time()
     if st.session_state.use_router:
         status_container.write("🔀 Analyse de la requête...")
-        router_prompt = f"Tu es l'agent d'analyse de requêtes de Stéthopote.\n\nRequête : {user_query}"
+        router_prompt = (
+            "Tu es l'agent d'analyse de requêtes de Stéthopote, un moteur de recherche médical. "
+            "Ton rôle est de disséquer la requête de l'étudiant en médecine.\n\n"
+            f"Requête de l'étudiant : {user_query}"
+        )
         router_response = openai_client.responses.parse(
             model=ROUTER_MODEL, input=router_prompt, text_format=QueryAnalysis, temperature=0.0
         )
@@ -382,8 +386,8 @@ if prompt := st.chat_input(texte_barre):
             contexte_final, parents_to_format, metrics = rag_pipeline(prompt, status)
             status.update(label="Réponse prête !", state="complete", expanded=False)
 
-        # On stream la réponse en lui passant metrics par référence
-        full_response = st.write_stream(llm_stream(prompt, contexte_final, st.session_state.model_choice, metrics))
+        stream_container = st.empty()
+        full_response = stream_container.write_stream(llm_stream(prompt, contexte_final, st.session_state.model_choice, metrics))
 
         # Affichage des sources dans l'UI (uniquement s'il y a eu une recherche RAG)
         if parents_to_format:
