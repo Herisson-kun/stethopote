@@ -208,7 +208,8 @@ def rag_pipeline(user_query, status_container):
                 content = content.replace(clean_c, f"<passage_cle>\n{clean_c}\n</passage_cle>")
             else:
                 content = f"<passage_cle>\n{clean_c}\n</passage_cle>\n\n" + content
-        contextes.append(f"--- SOURCE : {titre} | ID: {pid} ---\n{content}\n")
+        pages_str = ", ".join(p_data.get("pages", [])) if p_data.get("pages") else "N/A"
+        contextes.append(f"--- SOURCE : {titre} (Pages: {pages_str}) | ID: {pid} ---\n{content}\n")
 
     metrics["latencies"]["total_retrieval"] = time.time() - t_global_start
     return "\n".join(contextes), parents_to_format, metrics
@@ -296,7 +297,8 @@ for msg in st.session_state.messages:
                 for src in msg["sources"]:
                     college = src.get("college", "Inconnu")
                     titre = f"{src.get('titre_h1', '')} > {src.get('titre_h2', '')}".strip(" >")
-                    st.markdown(f'<div class="source-box"><strong>📖 {college}</strong><br><em>{titre}</em></div>', unsafe_allow_html=True)
+                    pages_str = ", ".join(src.get("pages", [])) if src.get("pages") else "N/A"
+                    st.markdown(f'<div class="source-box"><strong>📖 {college}</strong> (Page(s) {pages_str})<br><em>{titre}</em></div>', unsafe_allow_html=True)
 
 QUESTIONS_EXEMPLES = ["Signes de la pneumonie lobaire aiguë ?", "Traitement de l'endocardite infectieuse ?"]
 if prompt := st.chat_input(f"Ex: {random.choice(QUESTIONS_EXEMPLES)}"):
@@ -318,7 +320,8 @@ if prompt := st.chat_input(f"Ex: {random.choice(QUESTIONS_EXEMPLES)}"):
             for src in parents_to_format:
                 college = src.get("college", "Inconnu")
                 titre = f"{src.get('titre_h1', '')} > {src.get('titre_h2', '')}".strip(" >")
-                source_html = f'<div class="source-box"><strong>📖 {college}</strong><br><em>{titre}</em></div>'
+                pages_str = ", ".join(src.get("pages", [])) if src.get("pages") else "N/A"
+                source_html = f'<div class="source-box"><strong>📖 {college}</strong> (Page(s) {pages_str})<br><em>{titre}</em></div>'
                 if source_html not in sources_uniques:
                     sources_uniques.append(source_html)
                     st.markdown(source_html, unsafe_allow_html=True)
