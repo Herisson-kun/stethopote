@@ -464,3 +464,6 @@ if prompt := st.chat_input(texte_barre):
             
         except Exception as e:
             print(f"⚠️ Erreur lors de l'enregistrement du log Supabase : {e}")
+
+        # LA MAGIE ANTI-GHOSTING : On force le rafraîchissement propre de l'UI
+        st.rerun()
