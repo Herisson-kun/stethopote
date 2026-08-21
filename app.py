@@ -1,36 +1,23 @@
 import streamlit as st
-import os
+import time
 import random
-import json
-from pathlib import Path
-from dotenv import load_dotenv
-
-# --- Imports LangChain Officiels & Robustes ---
-from langchain_core.stores import InMemoryStore
-from langchain_core.documents import Document
-from langchain_pinecone import PineconeVectorStore
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain.retrievers import ParentDocumentRetriever # Import standard
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ==========================================
-# 1. CONFIGURATION INITIALE & STYLE
+# 1. CONFIGURATION & CSS ADAPTATIF
 # ==========================================
-load_dotenv()
-st.set_page_config(page_title="Stéthopote 🩺", page_icon="🩺", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Stéthopote", page_icon="🩺", layout="centered", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
-    .stChatMessage { font-size: 1.1rem !important; }
-    .stMarkdown { line-height: 1.6; }
-    div[data-baseweb="input"] > div:focus-within {
-        border-color: #4A90E2 !important;
-        box-shadow: 0 0 0 1px #4A90E2 !important;
-    }
-    .streamlit-expanderHeader {
-        font-weight: 600;
-        color: #2C3E50;
+    .stChatMessage { font-size: 1.05rem !important; }
+    .source-box { 
+        background-color: var(--secondary-background-color); 
+        color: var(--text-color);
+        padding: 12px; 
+        border-radius: 8px; 
+        border-left: 4px solid #4A90E2; 
+        margin-bottom: 10px; 
+        font-size: 0.9rem;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -54,141 +41,123 @@ QUESTIONS_EXEMPLES = [
 ]
 
 # ==========================================
-# 2. INITIALISATION DU CERVEAU (Cloud + Local)
+# 2. FONCTIONS MOCKS (Labo RAG)
 # ==========================================
-@st.cache_resource
-def init_stethopote():
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    docstore_path = os.path.join(current_dir, "store_with_page", "docstore.jsonl")
-    
-    # 1. Pinecone
-    vectorstore = PineconeVectorStore(
-        index_name="stethopote",
-        embedding=embeddings
-    )
-    
-    # 2. Docstore
-    store = InMemoryStore()
-    try:
-        if os.path.exists(docstore_path):
-            with open(docstore_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip():
-                        data = json.loads(line)
-                        doc = Document(
-                            page_content=data["content"],
-                            metadata={
-                                "document_name": data["document_name"],
-                                "page_start": data["page_start"],
-                                "page_end": data["page_end"]
-                            }
-                        )
-                        store.mset([(data["id"], doc)])
-        else:
-            st.error(f"Fichier docstore.jsonl introuvable à : {docstore_path}")
-    except Exception as e:
-        st.error(f"Erreur lors de la lecture du docstore : {e}")
-    
-    # 3. Splitters (Requis par le Retriever)
-    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    child_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
-    
-    # 4. Retriever
-    return ParentDocumentRetriever(
-        vectorstore=vectorstore,
-        docstore=store,
-        child_splitter=child_splitter,
-        parent_splitter=parent_splitter
-    )
+def step_1_pinecone_search(query, top_k, use_filter):
+    time.sleep(0.5)
+    return [f"child_{i}" for i in range(1, top_k + 1)]
+
+def step_2_cohere_rerank(query, child_docs, top_n):
+    time.sleep(0.8)
+    return child_docs[:top_n]
+
+def step_3_supabase_fetch(top_child_ids):
+    time.sleep(0.5)
+    return [{
+        "college": "Cardiologie", "pages": ["cardiologie_3e_154"],
+        "titre": "Item 230 > Syndrome Coronarien Aigu",
+        "texte": "Le dosage de la troponine ultrasensible est inutile dans la prise en charge des SCA ST+."
+    }]
+
+def step_4_llm_stream(query, parent_docs, model_choice):
+    modele_name = "Terra 🌍" if model_choice == "🌍 Terra" else "Luna 🌙"
+    reponse = f"*(Généré par {modele_name})* D'après les recommandations, la prise en charge d'un SCA ST+ est une urgence absolue. Il ne faut pas attendre la troponine."
+    for mot in reponse.split(" "):
+        yield mot + " "
+        time.sleep(0.04)
 
 # ==========================================
-# 3. INTERFACE & LOGIQUE
+# 3. PANNEAU LATÉRAL (Labo RAG)
 # ==========================================
-
 with st.sidebar:
-    st.title("⚙️ Paramètres")
-    st.info("Assistant de révision basé strictement sur tes cours.")
-    st.divider()
-    if st.button("🗑️ Nouvelle conversation", use_container_width=True):
+    st.title("⚙️ Stéthopote")
+    st.caption("Ton binôme de révision médical, sourcé à 100% sur les référentiels nationaux.")
+    
+    if st.button("🔄 Effacer l'historique en cours", type="primary", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
-st.title("🩺 Stéthopote", anchor=False)
-st.caption("Ton binôme de révision médical")
+    st.divider()
 
-try:
-    retriever = init_stethopote()
-except Exception as e:
-    st.error(f"Erreur de base : {e}")
-    st.stop()
+    with st.expander("🛠️ Options Avancées (Labo RAG)"):
+        st.session_state.use_reranker = st.toggle("Activer Reranker (Cohere)", value=True)
+        st.session_state.top_k_children = st.slider("🔍 Enfants récupérés", min_value=10, max_value=200, value=50, step=10)
+        
+        if st.session_state.use_reranker:
+            st.session_state.top_n_parents = st.slider("⚖️ Parents (Top N Rerank)", min_value=1, max_value=10, value=3)
+        else:
+            st.session_state.top_n_parents = st.slider("⚖️ Parents (Sans Rerank)", min_value=1, max_value=10, value=5)
+            
+        st.session_state.use_router = st.toggle("🔀 Routeur LLM d'intentions", value=False)
+        st.session_state.use_filter = st.toggle("🏷️ Filtrage par Items R2C", value=True)
+        st.session_state.use_reformulation = st.toggle("🔄 Reformulation de requête", value=False)
+
+# ==========================================
+# 4. ZONE PRINCIPALE (Modèle & Chat)
+# ==========================================
+col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+with col1:
+    st.title("🩺 Stéthopote", anchor=False)
+with col2:
+    st.session_state.model_choice = st.selectbox("Modèle", ["🌍 Terra", "🌙 Luna"], label_visibility="collapsed")
 
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [{"role": "assistant", "content": "Bonjour ! Pose-moi une question médicale."}]
 
-# Affichage historique
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if "sources" in msg:
+            with st.expander("📚 Sources médicales consultées"):
+                for src in msg["sources"]:
+                    st.markdown(f"""
+                    <div class="source-box">
+                        <strong>📖 {src['college']}</strong> (Pages {", ".join([p.split('_')[-1] for p in src['pages']])})<br>
+                        <em>{src['titre']}</em>
+                    </div>
+                    """, unsafe_allow_html=True)
 
 placeholder_q = random.choice(QUESTIONS_EXEMPLES)
 
 if prompt := st.chat_input(f"Ex: {placeholder_q}"):
     
-    # Affichage utilisateur
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Réponse Assistant
     with st.chat_message("assistant"):
-        with st.spinner("Recherche dans les cours... 📚"):
-            try:
-                # ÉTAPE A : Retrieval
-                relevant_docs = retriever.invoke(prompt)
-                
-                if not relevant_docs:
-                    st.warning("Désolé, je ne trouve pas d'info à ce sujet dans tes collèges.")
-                else:
-                    context = "\n\n---\n\n".join([d.page_content for d in relevant_docs])
-                    
-                    # ÉTAPE B : LLM & Prompt
-                    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, streaming=True)
-                    
-                    prompt_template = ChatPromptTemplate.from_messages([
-                        ("system", "Tu es Stéthopote, un assistant médical. Réponds UNIQUEMENT en utilisant le contexte fourni. Si l'info manque, dis-le. Structure avec des puces et du gras."),
-                        MessagesPlaceholder(variable_name="chat_history"),
-                        ("human", "Contexte :\n{context}\n\nQuestion : {query}")
-                    ])
-                    
-                    chain = prompt_template | llm
-                    
-                    # ÉTAPE C : Historique formaté
-                    history = []
-                    for m in st.session_state.messages[:-1]:
-                        role = "human" if m["role"] == "user" else "ai"
-                        history.append((role, m["content"]))
-                    
-                    # ÉTAPE D : Streaming
-                    full_response = st.write_stream(
-                        chunk.content for chunk in chain.stream({
-                            "context": context,
-                            "query": prompt,
-                            "chat_history": history
-                        })
-                    )
-                    
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+        with st.status("🧠 Analyse de la littérature médicale...", expanded=True) as status:
+            if st.session_state.use_reformulation:
+                st.write("🔄 Reformulation de la question...")
+                time.sleep(0.3)
+            if st.session_state.use_router:
+                st.write("🔀 Routage de l'intention...")
+                time.sleep(0.3)
 
-                    # ÉTAPE E : Sources
-                    with st.expander("📚 Sources consultées"):
-                        for i, d in enumerate(relevant_docs, 1):
-                            name = d.metadata.get('document_name', 'Inconnu')
-                            p_s = d.metadata.get('page_start', '?')
-                            p_e = d.metadata.get('page_end', '?')
-                            p_info = f"Page {p_s}" if p_s == p_e else f"Pages {p_s} à {p_e}"
-                            st.markdown(f"**{i}. {name}** — *{p_info}*")
-                            
-            except Exception as e:
-                st.error(f"Erreur technique : {e}")
+            st.write(f"🔍 Recherche (Récupération de {st.session_state.top_k_children} vecteurs)...")
+            enfants = step_1_pinecone_search(prompt, st.session_state.top_k_children, st.session_state.use_filter)
+            
+            if st.session_state.use_reranker:
+                st.write(f"⚖️ Reranking (Sélection des {st.session_state.top_n_parents} meilleurs)...")
+                top_enfants = step_2_cohere_rerank(prompt, enfants, st.session_state.top_n_parents)
+            else:
+                top_enfants = enfants[:st.session_state.top_n_parents]
+            
+            st.write("📚 Récupération des fragments complets (Supabase)...")
+            parents = step_3_supabase_fetch(top_enfants)
+            status.update(label="Réponse prête !", state="complete", expanded=False)
+
+        full_response = st.write_stream(step_4_llm_stream(prompt, parents, st.session_state.model_choice))
+
+        with st.expander("📚 Sources médicales consultées"):
+            for src in parents:
+                st.markdown(f"""
+                <div class="source-box">
+                    <strong>📖 {src['college']}</strong> (Pages {", ".join([p.split('_')[-1] for p in src['pages']])})<br>
+                    <em>{src['titre']}</em>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.session_state.messages.append({
+            "role": "assistant", "content": full_response, "sources": parents
+        })
