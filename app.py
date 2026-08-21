@@ -2,10 +2,23 @@ import streamlit as st
 import time
 import random
 import os
+import sys
+import subprocess
 import re
 from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
+
+# --- DEBUG DIAGNOSTIQUE PINECONE ---
+try:
+    print("=== DÉBUT DIAGNOSTIQUE PACKAGES ===")
+    result = subprocess.run([sys.executable, '-m', 'pip', 'list'], capture_output=True, text=True)
+    print(result.stdout)
+    print("=== FIN DIAGNOSTIQUE PACKAGES ===")
+except Exception as e:
+    print(f"Erreur pip list: {e}")
+# -----------------------------------
+
 from pinecone import Pinecone
 from supabase import create_client, Client
 from openai import OpenAI
