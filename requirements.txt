@@ -2,7 +2,7 @@ protobuf==3.20.3
 streamlit
 openai
 supabase
-pinecone-client
+pinecone
 pinecone-text
 cohere
 pydantic
