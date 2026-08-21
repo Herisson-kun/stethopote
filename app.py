@@ -100,7 +100,15 @@ class QueryAnalysis(BaseModel):
     optimized_query: str = Field(
         description="Réécris la requête en une question clinique claire pour un moteur de recherche. RÈGLES ABSOLUES : 1. Retire les formules de politesse. 2. N'invente AUCUN diagnostic. 3. NE MENTIONNE JAMAIS LE NUMÉRO DE L'ITEM."
     )   
-    category: str = Field(description="Catégorie : 'specific_question', 'full_item_review', 'full_disease_review', ou 'non_medical_or_smalltalk' (salutations, remerciements, lettres aléatoires, requêtes vides ou hors sujet).")
+    category: str = Field(
+        description=(
+            "Catégorie de la question : "
+            "'specific_question' (numéro d'item, questions cliniques, traitements, définitions), "
+            "'full_item_review'"
+            "'full_disease_review' (questions de synthèse sur une pathologie), "
+            "ou 'non_medical_or_smalltalk' (salutations, remerciements, lettres aléatoires, hors sujet)."
+        )
+    )
     item_filter: Optional[str] = Field(description="Si l'étudiant mentionne un numéro d'item, extraire la valeur exacte format 'Item XXX'. Sinon, null.")
     hypothetical_answer: str = Field(description="Rédige une réponse hypothétique TRÈS COURTE (2-3 phrases) à la question.")
 
