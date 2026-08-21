@@ -100,7 +100,7 @@ class QueryAnalysis(BaseModel):
     optimized_query: str = Field(
         description="Réécris la requête en une question clinique claire pour un moteur de recherche. RÈGLES ABSOLUES : 1. Retire les formules de politesse. 2. N'invente AUCUN diagnostic. 3. NE MENTIONNE JAMAIS LE NUMÉRO DE L'ITEM."
     )   
-    category: str = Field(description="Catégorie de la question : 'specific_question', 'full_item_review', 'full_disease_review'.")
+    category: str = Field(description="Catégorie de la question : 'specific_question', 'full_item_review', 'full_disease_review', ou 'non_medical_or_smalltalk' (pour les salutations, remerciements ou questions hors sujet médical).")
     item_filter: Optional[str] = Field(description="Si l'étudiant mentionne un numéro d'item, extraire la valeur exacte format 'Item XXX'. Sinon, null.")
     hypothetical_answer: str = Field(description="Rédige une réponse hypothétique TRÈS COURTE (2-3 phrases) à la question.")
 
@@ -141,6 +141,16 @@ def rag_pipeline(user_query, status_container):
     metrics["latencies"]["router"] = time.time() - t0
     metrics["optimized_query"] = analysis.optimized_query
     metrics["item_filter"] = analysis.item_filter
+
+    # 🛑 LE COURT-CIRCUIT (SMALL TALK)
+    if analysis.category == "non_medical_or_smalltalk":
+        status_container.write("👋 Discussion classique détectée (pas de recherche RAG)...")
+        metrics["latencies"]["vectorization"] = 0
+        metrics["latencies"]["pinecone"] = 0
+        metrics["latencies"]["supabase"] = 0
+        metrics["latencies"]["cohere"] = 0
+        metrics["latencies"]["total_retrieval"] = time.time() - t_global_start
+        return "", [], metrics
 
     # --- ETAPE 2 : VECTORISATION ---
     t0 = time.time()
@@ -230,19 +240,28 @@ def llm_stream(user_query, contexte_final, model_choice, metrics):
     LLM_MODEL = "gpt-5.6-luna" if model_choice == "🌙 Luna" else "gpt-5.6-terra"
     t0 = time.time()
     
-    system_prompt = (
-        "Tu es Stéthopote, un tuteur médical expert et bienveillant, conçu pour aider les étudiants en médecine français à préparer les EDN.\n\n"
-        "RÈGLES DE LECTURE DU CONTEXTE :\n"
-        "1. Les documents sont classés par ordre de lecture logique.\n"
-        "2. Porte une attention toute particulière aux textes encadrés par les balises <passage_cle>...</passage_cle>.\n\n"
-        "RÈGLES DE RÉDACTION :\n"
-        "- FIABILITÉ ABSOLUE : N'invente jamais rien.\n"
-        "- STRUCTURE : Utilise le Markdown (listes à puces, gras).\n"
-        "- SOURÇAGE IN-LINE : Insère des références courtes entre crochets de manière parcimonieuse (ex: [VIII. > A.]).\n"
-        "- N'ajoute PAS de bibliographie à la fin de ton texte.\n\n"
-        f"CONTEXTE OFFICIEL :\n{contexte_final}\n\n"
-        f"QUESTION DE L'ÉTUDIANT : \n{user_query}"
-    )
+    # Choix du prompt selon qu'il y a eu un court-circuit ou non
+    if not contexte_final:
+        system_prompt = (
+            "Tu es Stéthopote, un tuteur médical amical pour les étudiants en médecine.\n"
+            "L'étudiant te parle de manière informelle (salutations, blague, hors sujet).\n"
+            "Réponds-lui avec sympathie et humour en quelques phrases, et rappelle-lui que tu es là pour l'aider à réviser ses EDN.\n\n"
+            f"MESSAGE DE L'ÉTUDIANT : \n{user_query}"
+        )
+    else:
+        system_prompt = (
+            "Tu es Stéthopote, un tuteur médical expert et bienveillant, conçu pour aider les étudiants en médecine français à préparer les EDN.\n\n"
+            "RÈGLES DE LECTURE DU CONTEXTE :\n"
+            "1. Les documents sont classés par ordre de lecture logique.\n"
+            "2. Porte une attention toute particulière aux textes encadrés par les balises <passage_cle>...</passage_cle>.\n\n"
+            "RÈGLES DE RÉDACTION :\n"
+            "- FIABILITÉ ABSOLUE : N'invente jamais rien.\n"
+            "- STRUCTURE : Utilise le Markdown (listes à puces, gras).\n"
+            "- SOURÇAGE IN-LINE : Insère des références courtes entre crochets de manière parcimonieuse (ex: [VIII. > A.]).\n"
+            "- N'ajoute PAS de bibliographie à la fin de ton texte.\n\n"
+            f"CONTEXTE OFFICIEL :\n{contexte_final}\n\n"
+            f"QUESTION DE L'ÉTUDIANT : \n{user_query}"
+        )
 
     response_stream = openai_client.responses.create(
         model=LLM_MODEL, input=system_prompt, reasoning={"effort": "none"}, stream=True
@@ -282,7 +301,8 @@ with st.sidebar:
     st.title("⚙️ Stéthopote")
     st.caption("Ton binôme de révision médical.")
     if st.button("🔄 Effacer l'historique", type="primary", use_container_width=True):
-        st.session_state.messages = []
+        # Au lieu de mettre une liste vide [], on réinjecte le message de bienvenue !
+        st.session_state.messages = [{"role": "assistant", "content": "Bonjour ! Pose-moi une question médicale."}]
         st.rerun()
 
     st.divider()
@@ -312,7 +332,31 @@ for msg in st.session_state.messages:
                     pages_str = ", ".join(src.get("pages", [])) if src.get("pages") else "N/A"
                     st.markdown(f'<div class="source-box"><strong>📖 {college}</strong> (Page(s) {pages_str})<br><em>{titre}</em></div>', unsafe_allow_html=True)
 
-QUESTIONS_EXEMPLES = ["Signes de la pneumonie lobaire aiguë ?", "Traitement de l'endocardite infectieuse ?"]
+QUESTIONS_EXEMPLES = [
+    "Quels sont les signes à l'ECG d'une hyperkaliémie menaçante ?",
+    "Prise en charge thérapeutique immédiate d'une crise d'asthme sévère ?",
+    "Comment faire le diagnostic d'une endocardite infectieuse (Critères de Duke) ?",
+    "Quelles sont les indications de l'oxygénothérapie longue durée (OLD) dans la BPCO ?",
+    "Quelles sont les causes d'insuffisance rénale aiguë fonctionnelle ?",
+    "Quels sont les drapeaux rouges (red flags) devant une céphalée aiguë ?",
+    "Quel est le bilan de première intention devant une anémie microcytaire ?",
+    "Quelles sont les complications microvasculaires du diabète de type 2 ?",
+    "Quels sont les critères de gravité d'une pancréatite aiguë ?",
+    "Quel est le traitement probabiliste d'une méningite bactérienne communautaire ?",
+    "Quelles sont les contre-indications absolues à la thrombolyse dans l'AVC ischémique ?",
+    "Quels sont les signes cliniques et biologiques d'une hypothyroïdie fruste ?",
+    "Comment évaluer le risque cardiovasculaire global (SCORE) ?",
+    "Quel est l'antibiothérapie d'une pyélonéphrite aiguë simple chez la femme ?",
+    "Quels sont les signes cliniques d'une occlusion intestinale aiguë ?",
+    "Score de Wells et démarche diagnostique devant une suspicion d'embolie pulmonaire ?",
+    "Quels sont les traitements antalgiques recommandés dans la colique néphrétique ?",
+    "Quels sont les signes cliniques de l'insuffisance cardiaque gauche ?",
+    "Prise en charge d'une fibrillation atriale (FA) mal tolérée sur le plan hémodynamique ?",
+    "Diagnostic et prise en charge d'un état de mal épileptique de l'adulte ?",
+    "Quels sont les signes cliniques d'hypertension intracrânienne (HTIC) ?",
+    "Règle ABCDE pour le dépistage clinique du mélanome ?",
+    "Quels sont les signes de gravité d'une pneumonie aiguë communautaire (score CRB-65) ?"
+]
 if prompt := st.chat_input(f"Ex: {random.choice(QUESTIONS_EXEMPLES)}"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -326,17 +370,18 @@ if prompt := st.chat_input(f"Ex: {random.choice(QUESTIONS_EXEMPLES)}"):
         # On stream la réponse en lui passant metrics par référence
         full_response = st.write_stream(llm_stream(prompt, contexte_final, st.session_state.model_choice, metrics))
 
-        # Affichage des sources dans l'UI
-        sources_uniques = []
-        with st.expander("📚 Sources médicales consultées", expanded=True):
-            for src in parents_to_format:
-                college = src.get("college", "Inconnu")
-                titre = f"{src.get('titre_h1', '')} > {src.get('titre_h2', '')}".strip(" >")
-                pages_str = ", ".join(src.get("pages", [])) if src.get("pages") else "N/A"
-                source_html = f'<div class="source-box"><strong>📖 {college}</strong> (Page(s) {pages_str})<br><em>{titre}</em></div>'
-                if source_html not in sources_uniques:
-                    sources_uniques.append(source_html)
-                    st.markdown(source_html, unsafe_allow_html=True)
+        # Affichage des sources dans l'UI (uniquement s'il y a eu une recherche RAG)
+        if parents_to_format:
+            sources_uniques = []
+            with st.expander("📚 Sources médicales consultées", expanded=True):
+                for src in parents_to_format:
+                    college = src.get("college", "Inconnu")
+                    titre = f"{src.get('titre_h1', '')} > {src.get('titre_h2', '')}".strip(" >")
+                    pages_str = ", ".join(src.get("pages", [])) if src.get("pages") else "N/A"
+                    source_html = f'<div class="source-box"><strong>📖 {college}</strong> (Page(s) {pages_str})<br><em>{titre}</em></div>'
+                    if source_html not in sources_uniques:
+                        sources_uniques.append(source_html)
+                        st.markdown(source_html, unsafe_allow_html=True)
 
         st.session_state.messages.append({"role": "assistant", "content": full_response, "sources": parents_to_format})
 
